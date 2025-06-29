@@ -177,12 +177,12 @@ class Snap {
     onSnapStart,
     onSnapComplete,
 
-    // ← predictive options
+    // predictive options
     predictionMultiplier = 24,    // px per wheel-delta
     predictiveThreshold  = 0.15,  // fraction of viewport height
     lockoutMs             = 250   // ms cooldown after predictive snap
   } = {}) {
-    this.lenis  = lenis;
+    this.lenis    = lenis;
     this.elements = new Map();
     this.snaps    = new Map();
     this.viewport = { width: window.innerWidth, height: window.innerHeight };
@@ -214,10 +214,12 @@ class Snap {
       if (now - this._lastWheelTime < 32) return; // mid-gesture
       this._lastWheelTime = now;
 
-      const predicted = this._currentScroll + e.deltaY * this.options.predictionMultiplier;
+      // ← **UPDATED** factor includes Lenis's lerp
+      const factor    = this.options.predictionMultiplier * (1 - (this.lenis.options?.lerp ?? 0));
+      const predicted = this._currentScroll + e.deltaY * factor;
       const zonePx    = this.viewport.height * this.options.predictiveThreshold;
 
-      // gather only the 'center' values (seamless with your .addElement centers)
+      // gather only the 'center' values
       const candidates = [];
       this.snaps.forEach(({ value }) => candidates.push(value));
       this.elements.forEach(elObj => {
@@ -266,7 +268,7 @@ class Snap {
     };
     this.lenis.on("scroll", this.onScroll);
 
-    // — the original onSnap logic, verbatim
+    // — original onSnap logic, verbatim
     this.onSnap = () => {
       let { scroll, isHorizontal } = this.lenis;
       scroll = Math.ceil(scroll);
@@ -334,7 +336,7 @@ class Snap {
     };
     this.onSnapDebounced = debounce(this.onSnap, debounceDelay);
 
-    // — finally, stash options
+    // — stash options
     this.options = {
       type, lerp, easing, duration,
       velocityThreshold,
