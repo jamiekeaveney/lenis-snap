@@ -23,8 +23,7 @@ function removeParentSticky(element) {
 }
 
 function addParentSticky(element) {
-  var _a;
-  if (((_a = element?.dataset)?.sticky) === "true") {
+  if (element?.dataset?.sticky === "true") {
     element.style.removeProperty("position");
     delete element.dataset.sticky;
   }
@@ -33,29 +32,29 @@ function addParentSticky(element) {
   }
 }
 
-function offsetTop(element, accumulator = 0) {
-  const top = accumulator + element.offsetTop;
+function offsetTop(element, acc = 0) {
+  const top = acc + element.offsetTop;
   return element.offsetParent
     ? offsetTop(element.offsetParent, top)
     : top;
 }
 
-function offsetLeft(element, accumulator = 0) {
-  const left = accumulator + element.offsetLeft;
+function offsetLeft(element, acc = 0) {
+  const left = acc + element.offsetLeft;
   return element.offsetParent
     ? offsetLeft(element.offsetParent, left)
     : left;
 }
 
-function scrollTop(element, accumulator = 0) {
-  const top = accumulator + element.scrollTop;
+function scrollTop(element, acc = 0) {
+  const top = acc + element.scrollTop;
   return element.offsetParent
     ? scrollTop(element.offsetParent, top)
     : top + window.scrollY;
 }
 
-function scrollLeft(element, accumulator = 0) {
-  const left = accumulator + element.scrollLeft;
+function scrollLeft(element, acc = 0) {
+  const left = acc + element.scrollLeft;
   return element.offsetParent
     ? scrollLeft(element.offsetParent, left)
     : left + window.scrollX;
@@ -94,7 +93,7 @@ class SnapElement {
       left = offsetLeft(this.element);
     } else {
       const r = this.element.getBoundingClientRect();
-      top = r.top + scrollTop(this.element);
+      top  = r.top  + scrollTop(this.element);
       left = r.left + scrollLeft(this.element);
     }
 
@@ -105,7 +104,7 @@ class SnapElement {
   onResize = ([entry]) => {
     if (!entry?.borderBoxSize?.[0]) return;
     this.setRect({
-      width: entry.borderBoxSize[0].inlineSize,
+      width:  entry.borderBoxSize[0].inlineSize,
       height: entry.borderBoxSize[0].blockSize
     });
   };
@@ -117,18 +116,18 @@ class SnapElement {
     height  = height  ?? this.rect.height;
     element = element ?? this.rect.element;
     if (
-      top    === this.rect.top &&
-      left   === this.rect.left &&
+      top    === this.rect.top   &&
+      left   === this.rect.left  &&
       width  === this.rect.width &&
       height === this.rect.height &&
       element=== this.rect.element
     ) return;
 
     this.rect = {
-      top, y: top,
-      left, x: left,
-      width, height,
-      bottom: top + height,
+      top,    y: top,
+      left,   x: left,
+      width,  height,
+      bottom: top  + height,
       right:  left + width,
       element
     };
@@ -152,7 +151,7 @@ class Snap {
     easing,
     duration,
     velocityThreshold = 1,
-    releaseVelocityThreshold = null,  // ← new
+    releaseVelocityThreshold = null,  // ← NEW option
     debounce: debounceDelay = 0,
     onSnapStart,
     onSnapComplete
@@ -164,9 +163,12 @@ class Snap {
     this.isStopped = false;
 
     this.options = {
-      type, lerp, easing, duration,
+      type,
+      lerp,
+      easing,
+      duration,
       velocityThreshold,
-      releaseVelocityThreshold,       // ← include
+      releaseVelocityThreshold,       // ← include it
       debounce: debounceDelay,
       onSnapStart,
       onSnapComplete
@@ -187,22 +189,67 @@ class Snap {
   onScroll = ({ lastVelocity, velocity, userData }) => {
     if (this.isStopped) return;
 
-    const { velocityThreshold, releaseVelocityThreshold } = this.options;
+    const {
+      velocityThreshold,
+      releaseVelocityThreshold
+    } = this.options;
+
     const isDecel    = Math.abs(lastVelocity) > Math.abs(velocity);
     const isTurningB = Math.sign(lastVelocity) !== Math.sign(velocity) && velocity !== 0;
 
-    // 1) high-speed release snap
+    // ——— HIGH-VELOCITY RELEASE SNAP ———
     if (
       releaseVelocityThreshold != null &&
       Math.abs(lastVelocity) >= releaseVelocityThreshold &&
       velocity === 0 &&
       userData?.initiator !== "snap"
     ) {
-      this.onSnap();
+      // build the same snaps list
+      let { scroll, isHorizontal } = this.lenis;
+      scroll = Math.ceil(scroll);
+
+      const allSnaps = [];
+      this.snaps.forEach(({ value, userData }) => allSnaps.push({ value, userData }));
+      this.elements.forEach(el => {
+        el.align.forEach(a => {
+          let value;
+          const r = el.rect;
+          if (a === "start")  value = r.top;
+          if (a === "center") value = isHorizontal
+            ? r.left + r.width  / 2 - this.viewport.width  / 2
+            : r.top  + r.height / 2 - this.viewport.height / 2;
+          if (a === "end")    value = isHorizontal
+            ? r.left + r.width  - this.viewport.width
+            : r.top  + r.height - this.viewport.height;
+          if (typeof value === "number") allSnaps.push({ value: Math.ceil(value), elementObj: el });
+        });
+      });
+
+      // sort ascending
+      allSnaps.sort((a, b) => a.value - b.value);
+
+      // pick next/prev based on direction
+      let targetSnap;
+      if (lastVelocity > 0) {
+        targetSnap = allSnaps.find(s => s.value > scroll) || allSnaps[allSnaps.length - 1];
+      } else {
+        const rev = Array.from(allSnaps).reverse();
+        targetSnap = rev.find(s => s.value < scroll) || rev[rev.length - 1];
+      }
+
+      // finally scrollTo that target
+      this.lenis.scrollTo(targetSnap.value, {
+        lerp:     this.options.lerp,
+        easing:   this.options.easing,
+        duration: this.options.duration,
+        userData: { initiator: "snap" },
+        onStart:  () => this.options.onSnapStart?.(targetSnap),
+        onComplete:() => this.options.onSnapComplete?.(targetSnap)
+      });
       return;
     }
 
-    // 2) low-velocity proximity snap (debounced)
+    // ——— LOW-VELOCITY PROXIMITY SNAP — (unchanged)
     if (
       Math.abs(velocity) < velocityThreshold &&
       isDecel && !isTurningB &&
@@ -216,31 +263,26 @@ class Snap {
     let { scroll, isHorizontal } = this.lenis;
     scroll = Math.ceil(scroll);
 
-    // gather all snaps
+    // gather and sort snaps
     const snaps = [];
     this.snaps.forEach(({ value, userData }) => snaps.push({ value, userData }));
-    this.elements.forEach(elementObj => {
-      elementObj.align.forEach(a => {
+    this.elements.forEach(el => {
+      el.align.forEach(a => {
         let value;
-        const { rect } = elementObj;
-        if (a === "start")  value = rect.top;
+        const r = el.rect;
+        if (a === "start")  value = r.top;
         if (a === "center") value = isHorizontal
-          ? rect.left + rect.width  / 2 - this.viewport.width  / 2
-          : rect.top  + rect.height / 2 - this.viewport.height / 2;
+          ? r.left + r.width  / 2 - this.viewport.width  / 2
+          : r.top  + r.height / 2 - this.viewport.height / 2;
         if (a === "end")    value = isHorizontal
-          ? rect.left + rect.width  - this.viewport.width
-          : rect.top  + rect.height - this.viewport.height;
-        if (typeof value === "number") snaps.push({
-          value: Math.ceil(value),
-          elementObj
-        });
+          ? r.left + r.width  - this.viewport.width
+          : r.top  + r.height - this.viewport.height;
+        if (typeof value === "number") snaps.push({ value: Math.ceil(value), elementObj: el });
       });
     });
-
-    // sort by absolute distance
     snaps.sort((a, b) => Math.abs(a.value - scroll) - Math.abs(b.value - scroll));
 
-    // symmetric ± threshold/2 snapping
+    // symmetric threshold
     let chosen = null;
     for (const s of snaps) {
       const custom = s.elementObj?.options.threshold;
@@ -253,7 +295,7 @@ class Snap {
       }
     }
 
-    // finalize
+    // snap
     if (this.options.type === "mandatory" || chosen) {
       const snap = chosen || snaps[0];
       this.lenis.scrollTo(snap.value, {
