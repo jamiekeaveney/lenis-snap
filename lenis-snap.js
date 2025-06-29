@@ -151,7 +151,7 @@ class Snap {
     lerp,
     easing,
     duration,
-    velocityThreshold = 1,  // Fallback to 1 if not provided
+    velocityThreshold = 1,  // Ensure default value
     debounce: debounceDelay = 0,
     onSnapStart,
     onSnapComplete
@@ -183,8 +183,10 @@ class Snap {
       }
     };
 
+    // Correctly bind methods to the instance
+    this.onSnapDebounced = debounce(this.onSnap.bind(this), this.options.debounce);
+
     this.lenis.on("scroll", this.onScroll);
-    this.onSnapDebounced = debounce(this.onSnap.bind(this), this.options.debounce);  // Correct debounce
   }
 
   snapToClosest(targetY) {
@@ -235,19 +237,23 @@ class Snap {
   stop() {
     this.isStopped = true;
   }
+
   add(value, userData = {}) {
     const id = uid();
     this.snaps.set(id, { value, userData });
     return () => this.remove(id);
   }
+
   remove(id) {
     this.snaps.delete(id);
   }
+
   addElement(element, options = {}) {
     const id = uid();
     this.elements.set(id, new SnapElement(element, options));
     return () => this.removeElement(id);
   }
+
   removeElement(id) {
     this.elements.delete(id);
   }
