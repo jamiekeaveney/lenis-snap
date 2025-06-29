@@ -168,6 +168,9 @@ class Snap {
     this.snapToClosest = this.snapToClosest.bind(this);
     this.onSnap = this.onSnap.bind(this);  // Ensure proper binding
 
+    // Debugging: Check if this is undefined
+    console.log('Snap constructor: this:', this);
+
     window.addEventListener("resize", this.onWindowResize, false);
 
     // Predict the end of scroll based on velocity and snap to the closest target
@@ -185,6 +188,8 @@ class Snap {
 
     // Correctly bind methods to the instance
     this.onSnapDebounced = debounce(this.onSnap.bind(this), this.options.debounce);
+
+    console.log('Snap constructor after binding: this:', this);
 
     this.lenis.on("scroll", this.onScroll);
   }
