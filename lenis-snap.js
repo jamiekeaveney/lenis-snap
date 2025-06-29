@@ -252,3 +252,4 @@ class Snap {
     this.elements.delete(id);
   }
 }
+export { Snap };
