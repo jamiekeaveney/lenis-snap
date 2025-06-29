@@ -148,98 +148,68 @@ class Snap {
     this.lenis = lenis;
     this.elements = new Map();
     this.snaps = new Map();
-    this.viewport = {
-      width: window.innerWidth,
-      height: window.innerHeight
-    };
+    this.viewport = { width: window.innerWidth, height: window.innerHeight };
     this.isStopped = false;
+
+    // Resize listener
     this.onWindowResize = () => {
       this.viewport.width = window.innerWidth;
       this.viewport.height = window.innerHeight;
     };
-    this.onScroll = ({
-      lastVelocity,
-      velocity,
-      userData
-    }) => {
+
+    window.addEventListener("resize", this.onWindowResize, false);
+
+    // Predict the end of scroll based on velocity and snap to the closest target
+    this.onScroll = ({ lastVelocity, velocity, userData }) => {
       if (this.isStopped) return;
+
       const isDecelerating = Math.abs(lastVelocity) > Math.abs(velocity);
       const isTurningBack = Math.sign(lastVelocity) !== Math.sign(velocity) && velocity !== 0;
+
       if (Math.abs(velocity) < this.options.velocityThreshold && isDecelerating && !isTurningBack && userData?.initiator !== "snap") {
-        this.onSnapDebounced();
-      }
-    };
-    this.onSnap = () => {
-      let { scroll, isHorizontal } = this.lenis;
-      scroll = Math.ceil(scroll);
-      let snaps = [];
-
-      // 1) gather primitive snaps
-      this.snaps.forEach(({ value, userData }) => {
-        snaps.push({ value, userData });
-      });
-
-      // 2) gather element-based snaps
-      this.elements.forEach(elementObj => {
-        const { rect, align } = elementObj;
-        align.forEach(a => {
-          let value;
-          if (a === "start") {
-            value = rect.top;
-          } else if (a === "center") {
-            value = isHorizontal
-              ? rect.left + rect.width / 2 - this.viewport.width / 2
-              : rect.top + rect.height / 2 - this.viewport.height / 2;
-          } else if (a === "end") {
-            value = isHorizontal
-              ? rect.left + rect.width - this.viewport.width
-              : rect.top + rect.height - this.viewport.height;
-          }
-          if (typeof value === "number") {
-            snaps.push({ value: Math.ceil(value), elementObj });
-          }
-        });
-      });
-
-      // sort by proximity
-      snaps.sort((a, b) => Math.abs(a.value - scroll) - Math.abs(b.value - scroll));
-
-      // 3) symmetric threshold: snap if within ± threshold/2
-      let chosen = null;
-      for (const s of snaps) {
-        let threshold;
-        if (s.elementObj) {
-          const custom = s.elementObj.options.threshold;
-          threshold = typeof custom === "number" ? custom : s.elementObj.rect.height;
-        } else {
-          threshold = isHorizontal ? this.viewport.width : this.viewport.height;
-        }
-        const half = threshold / 2;
-        if (Math.abs(scroll - s.value) <= half) {
-          chosen = s;
-          break;
-        }
-      }
-
-      // 4) perform snap
-      if (this.options.type === "mandatory" || chosen) {
-        const snap = chosen || snaps[0];
-        this.lenis.scrollTo(snap.value, {
-          lerp: this.options.lerp,
-          easing: this.options.easing,
-          duration: this.options.duration,
-          userData: { initiator: "snap" },
-          onStart: () => this.options.onSnapStart?.(snap),
-          onComplete: () => this.options.onSnapComplete?.(snap),
-        });
+        const predictedY = predictScrollEnd(this.lenis.scroll, velocity);
+        this.snapToClosest(predictedY);
       }
     };
 
-    this.options = { type, lerp, easing, duration, velocityThreshold, debounce: debounceDelay, onSnapStart, onSnapComplete };
-    this.onWindowResize();
-    window.addEventListener("resize", this.onWindowResize, false);
-    this.onSnapDebounced = debounce(this.onSnap, this.options.debounce);
     this.lenis.on("scroll", this.onScroll);
+    this.onSnapDebounced = debounce(this.onSnap, this.options.debounce);
+  }
+
+  snapToClosest(targetY) {
+    let closest = null;
+    let closestDist = Infinity;
+
+    this.elements.forEach(elementObj => {
+      const { rect, align } = elementObj;
+      align.forEach(a => {
+        let value;
+
+        if (a === "start") {
+          value = rect.top;
+        } else if (a === "center") {
+          value = rect.top + rect.height / 2 - this.viewport.height / 2;
+        } else if (a === "end") {
+          value = rect.top + rect.height - this.viewport.height;
+        }
+
+        let dist = Math.abs(value - targetY);
+        if (dist < closestDist) {
+          closest = { value, elementObj };
+          closestDist = dist;
+        }
+      });
+    });
+
+    if (closest) {
+      this.lenis.scrollTo(closest.value, {
+        lerp: this.options.lerp,
+        easing: this.options.easing,
+        userData: { initiator: "snap" },
+        onStart: () => this.options.onSnapStart?.(closest),
+        onComplete: () => this.options.onSnapComplete?.(closest),
+      });
+    }
   }
 
   destroy() {
@@ -247,6 +217,7 @@ class Snap {
     window.removeEventListener("resize", this.onWindowResize, false);
     this.elements.forEach(el => el.destroy());
   }
+
   start() {
     this.isStopped = false;
   }
