@@ -145,6 +145,19 @@ function uid() {
   return index++;
 }
 
+function predictScrollEnd(currentY, velocity, friction = 0.1, maxFrames = 60) {
+  let predictedY = currentY;
+  let v = velocity;
+
+  for (let i = 0; i < maxFrames; i++) {
+    v *= 1 - friction;
+    predictedY += v;
+    if (Math.abs(v) < 0.1) break;
+  }
+
+  return predictedY;
+}
+
 class Snap {
   constructor(lenis, options = {}) {
     const {
@@ -178,19 +191,36 @@ class Snap {
     };
     this.isStopped = false;
 
-    // Bind methods once
+    // Bind methods BEFORE using them
     this.onWindowResize = this.onWindowResize.bind(this);
     this.onScroll = this.onScroll.bind(this);
     this.snapToClosest = this.snapToClosest.bind(this);
-    this.onSnap = this.onSnap.bind(this);
-    this.onSnapDebounced = debounce(this.onSnap, this.options.debounce);
+    this._onSnap = this._onSnap.bind(this); // note: renamed to avoid conflict
 
-    // Attach listeners
+    // Debounced version of snap callback
+    this.onSnapDebounced = debounce(this._onSnap, this.options.debounce);
+
+    // Add event listeners
     window.addEventListener("resize", this.onWindowResize, false);
     this.lenis.on("scroll", this.onScroll);
   }
 
+  onScroll({ lastVelocity, velocity, userData }) {
+    if (this.isStopped) return;
 
+    const isDecelerating = Math.abs(lastVelocity) > Math.abs(velocity);
+    const isTurningBack = Math.sign(lastVelocity) !== Math.sign(velocity) && velocity !== 0;
+
+    if (
+      Math.abs(velocity) < this.options.velocityThreshold &&
+      isDecelerating &&
+      !isTurningBack &&
+      userData?.initiator !== "snap"
+    ) {
+      const predictedY = predictScrollEnd(this.lenis.scroll, velocity);
+      this.snapToClosest(predictedY);
+    }
+  }
 
   snapToClosest(targetY) {
     let closest = null;
