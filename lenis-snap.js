@@ -9,6 +9,7 @@ function debounce(callback, delay) {
     }, delay);
   };
 }
+
 function removeParentSticky(element) {
   const position = getComputedStyle(element).position;
   const isSticky = position === "sticky";
@@ -20,6 +21,7 @@ function removeParentSticky(element) {
     removeParentSticky(element.offsetParent);
   }
 }
+
 function addParentSticky(element) {
   var _a;
   if (((_a = element == null ? void 0 : element.dataset) == null ? void 0 : _a.sticky) === "true") {
@@ -30,6 +32,7 @@ function addParentSticky(element) {
     addParentSticky(element.offsetParent);
   }
 }
+
 function offsetTop(element, accumulator = 0) {
   const top = accumulator + element.offsetTop;
   if (element.offsetParent) {
@@ -37,6 +40,7 @@ function offsetTop(element, accumulator = 0) {
   }
   return top;
 }
+
 function offsetLeft(element, accumulator = 0) {
   const left = accumulator + element.offsetLeft;
   if (element.offsetParent) {
@@ -44,6 +48,7 @@ function offsetLeft(element, accumulator = 0) {
   }
   return left;
 }
+
 function scrollTop(element, accumulator = 0) {
   const top = accumulator + element.scrollTop;
   if (element.offsetParent) {
@@ -51,6 +56,7 @@ function scrollTop(element, accumulator = 0) {
   }
   return top + window.scrollY;
 }
+
 function scrollLeft(element, accumulator = 0) {
   const left = accumulator + element.scrollLeft;
   if (element.offsetParent) {
@@ -58,6 +64,7 @@ function scrollLeft(element, accumulator = 0) {
   }
   return left + window.scrollX;
 }
+
 class SnapElement {
   constructor(element, {
     align = ["start"],
@@ -102,10 +109,12 @@ class SnapElement {
       height: this.element.offsetHeight
     });
   }
+
   destroy() {
     this.wrapperResizeObserver.disconnect();
     this.resizeObserver.disconnect();
   }
+
   setRect({
     top,
     left,
@@ -130,17 +139,19 @@ class SnapElement {
     this.rect.right = left + width;
   }
 }
+
 let index = 0;
 function uid() {
   return index++;
 }
+
 class Snap {
   constructor(lenis, {
     type = "mandatory",
     lerp,
     easing,
     duration,
-    velocityThreshold = 1,
+    velocityThreshold = 1,  // Fallback to 1 if not provided
     debounce: debounceDelay = 0,
     onSnapStart,
     onSnapComplete
@@ -173,7 +184,7 @@ class Snap {
     };
 
     this.lenis.on("scroll", this.onScroll);
-    this.onSnapDebounced = debounce(this.onSnap, this.options.debounce);
+    this.onSnapDebounced = debounce(this.onSnap.bind(this), this.options.debounce);  // Correct debounce
   }
 
   snapToClosest(targetY) {
@@ -241,5 +252,3 @@ class Snap {
     this.elements.delete(id);
   }
 }
-
-export { Snap };
