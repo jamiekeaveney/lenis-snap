@@ -52,11 +52,11 @@ function addParentSticky(element) {
  * Predicts the final scroll position based on initial velocity and friction.
  * This simulates a momentum-based scroll coasting to a stop.
  * @param {number} currentY The current scroll position.
- * @param {number} velocity The current scroll velocity.
- * @param {number} friction The friction factor (e.g., 0.95 means 5% slowdown per frame).
+ * @param {number} velocity The current scroll velocity from Lenis.
+ * @param {number} friction A value between 0 and 1; higher means less friction (coasts longer).
  * @returns {number} The predicted final scroll position.
  */
-function predictScrollEnd(currentY, velocity, friction = 0.95) {
+function predictScrollEnd(currentY, velocity, friction = 0.9) {
     let distance = 0;
     let v = velocity;
     let i = 0;
@@ -72,7 +72,7 @@ function predictScrollEnd(currentY, velocity, friction = 0.95) {
 
 /**
  * Calculates the target scroll Y position for an element based on a given alignment.
- * @param {DOMRect} rect The element's bounding rectangle.
+ * @param {object} rect The element's position and dimensions object.
  * @param {'start'|'center'|'end'} align The desired alignment in the viewport.
  * @param {{width: number, height: number}} viewport The viewport dimensions.
  * @returns {number} The target scroll Y position.
@@ -103,17 +103,13 @@ class SnapElement {
     this.rect = {};
 
     this.onWrapperResize = () => {
-      if (this.options.ignoreSticky) {
-        removeParentSticky(this.element);
-      }
+      if (this.options.ignoreSticky) removeParentSticky(this.element);
       
       const rect = this.element.getBoundingClientRect();
       const top = rect.top + window.scrollY;
       const left = rect.left + window.scrollX;
 
-      if (this.options.ignoreSticky) {
-        addParentSticky(this.element);
-      }
+      if (this.options.ignoreSticky) addParentSticky(this.element);
       
       this.setRect({ top, left });
     };
@@ -134,7 +130,6 @@ class SnapElement {
     this.resizeObserver = new ResizeObserver(this.onResize);
     this.resizeObserver.observe(this.element);
     
-    // Initial calculation
     this.onWrapperResize();
     this.setRect({
         width: this.element.offsetWidth,
@@ -147,35 +142,17 @@ class SnapElement {
     this.resizeObserver.disconnect();
   }
 
-  setRect({
-    top,
-    left,
-    width,
-    height
-  } = {}) {
+  setRect({ top, left, width, height } = {}) {
     const newTop = top ?? this.rect.top;
     const newLeft = left ?? this.rect.left;
     const newWidth = width ?? this.rect.width;
     const newHeight = height ?? this.rect.height;
 
-    if (
-      newTop === this.rect.top &&
-      newLeft === this.rect.left &&
-      newWidth === this.rect.width &&
-      newHeight === this.rect.height
-    ) {
-      return;
-    }
+    if (newTop === this.rect.top && newLeft === this.rect.left && newWidth === this.rect.width && newHeight === this.rect.height) return;
 
     this.rect = {
-      top: newTop,
-      left: newLeft,
-      width: newWidth,
-      height: newHeight,
-      y: newTop,
-      x: newLeft,
-      bottom: newTop + newHeight,
-      right: newLeft + newWidth,
+      top: newTop, left: newLeft, width: newWidth, height: newHeight,
+      y: newTop, x: newLeft, bottom: newTop + newHeight, right: newLeft + newWidth,
     };
   }
 }
@@ -193,41 +170,23 @@ function uid() {
 class Snap {
   constructor(lenis, options = {}) {
     const {
-      type = "mandatory",
-      lerp,
-      easing,
-      duration,
-      velocityThreshold = 0.5, // Lower threshold for earlier prediction
-      onSnapStart,
-      onSnapComplete
+      type = "mandatory", lerp, easing, duration,
+      velocityThreshold = 1.0, // Trigger snap if velocity is above this
+      onSnapStart, onSnapComplete
     } = options;
 
-    this.options = {
-      type,
-      lerp,
-      easing,
-      duration,
-      velocityThreshold,
-      onSnapStart,
-      onSnapComplete
-    };
-
+    this.options = { type, lerp, easing, duration, velocityThreshold, onSnapStart, onSnapComplete };
     this.lenis = lenis;
     this.elements = new Map();
-    this.viewport = {
-      width: window.innerWidth,
-      height: window.innerHeight
-    };
+    this.viewport = { width: window.innerWidth, height: window.innerHeight };
     
     this.isStopped = false;
-    this.isSnapping = false; // Flag to prevent snap logic from re-firing during a snap
+    this.isSnapping = false; // Flag to prevent re-triggering during a snap animation
     this.lastVelocity = 0;
 
-    // Bind methods
     this.onWindowResize = this.onWindowResize.bind(this);
     this.onScroll = this.onScroll.bind(this);
 
-    // Attach event listeners
     window.addEventListener("resize", this.onWindowResize, false);
     this.lenis.on("scroll", this.onScroll);
   }
@@ -237,18 +196,23 @@ class Snap {
     this.viewport.height = window.innerHeight;
   }
 
-  onScroll({ velocity, userData }) {
+  onScroll({ velocity, userData, event }) {
+    // Exit if snapping is paused, already in progress, or no elements are registered.
     if (this.isStopped || this.isSnapping || this.elements.size === 0) {
       this.lastVelocity = velocity;
       return;
     }
-    
-    // Lenis's `isScrolling` is true when the user is actively providing input (wheel, touch).
-    // We only want to predict a snap when the user has *stopped* providing input and the scroll is "coasting".
-    if (this.lenis.isScrolling) {
+
+    // *** THE CRITICAL FIX IS HERE ***
+    // If a native 'event' exists, the user is actively scrolling (e.g., turning the wheel).
+    // We do not want to snap yet, so we just track the velocity and exit.
+    if (event) {
         this.lastVelocity = velocity;
         return;
     }
+
+    // If we've reached this point, the user has stopped direct input, and the scroll is "coasting".
+    // This is the ideal moment to predict where the scroll will land and trigger a snap.
     
     const isDecelerating = Math.abs(this.lastVelocity) > Math.abs(velocity);
     const isTurningBack = Math.sign(this.lastVelocity) !== Math.sign(velocity) && velocity !== 0;
@@ -273,13 +237,8 @@ class Snap {
     this.elements.forEach(elementObj => {
         elementObj.align.forEach(a => {
             let value = calculateAlignedPosition(elementObj.rect, a, this.viewport);
-            
-            // Ensure value is within scrollable bounds
             value = Math.max(0, Math.min(value, this.lenis.limit));
-
             const dist = Math.abs(value - targetY);
-
-            // Use custom threshold if provided, otherwise check against closest distance
             const threshold = elementObj.options.threshold ?? Infinity;
 
             if (dist < threshold && dist < closestDist) {
@@ -290,7 +249,7 @@ class Snap {
     });
 
     if (closest) {
-      this.isSnapping = true; // Set flag to prevent new snaps until this one is complete
+      this.isSnapping = true;
       this.lenis.scrollTo(closest.value, {
         lerp: this.options.lerp,
         easing: this.options.easing,
@@ -298,7 +257,7 @@ class Snap {
         userData: { initiator: "snap" },
         onStart: () => this.options.onSnapStart?.(closest),
         onComplete: () => {
-          this.isSnapping = false; // Reset flag
+          this.isSnapping = false;
           this.options.onSnapComplete?.(closest);
         },
       });
