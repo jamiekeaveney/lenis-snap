@@ -63,7 +63,7 @@ class SnapElement {
     align = ["start"],
     ignoreSticky = true,
     ignoreTransform = false,
-    threshold = null
+    threshold = null      // ← optional custom threshold in px
   } = {}) {
     this.rect = {};
     this.onWrapperResize = () => {
@@ -83,7 +83,8 @@ class SnapElement {
       this.setRect({ top, left });
     };
     this.onResize = ([entry]) => {
-      if (!(entry == null ? void 0 : entry.borderBoxSize[0])) return;
+      if (!(entry == null ? void 0 : entry.borderBoxSize[0]))
+        return;
       const width = entry.borderBoxSize[0].inlineSize;
       const height = entry.borderBoxSize[0].blockSize;
       this.setRect({ width, height });
@@ -105,19 +106,20 @@ class SnapElement {
     this.wrapperResizeObserver.disconnect();
     this.resizeObserver.disconnect();
   }
-  setRect({ top, left, width, height, element } = {}) {
+  setRect({
+    top,
+    left,
+    width,
+    height,
+    element
+  } = {}) {
     top = top != null ? top : this.rect.top;
     left = left != null ? left : this.rect.left;
     width = width != null ? width : this.rect.width;
     height = height != null ? height : this.rect.height;
     element = element != null ? element : this.rect.element;
-    if (
-      top === this.rect.top &&
-      left === this.rect.left &&
-      width === this.rect.width &&
-      height === this.rect.height &&
-      element === this.rect.element
-    ) return;
+    if (top === this.rect.top && left === this.rect.left && width === this.rect.width && height === this.rect.height && element === this.rect.element)
+      return;
     this.rect.top = top;
     this.rect.y = top;
     this.rect.width = width;
@@ -141,7 +143,12 @@ class Snap {
     velocityThreshold = 1,
     debounce: debounceDelay = 0,
     onSnapStart,
-    onSnapComplete
+    onSnapComplete,
+
+    // ← NEW predictive options
+    predictionMultiplier = 14,      // pixels to look ahead per deltaY unit
+    predictiveThreshold = 0.1,      // fraction of viewport height
+    lockoutMs = 300                 // ms cooldown after a predictive snap
   } = {}) {
     this.lenis = lenis;
     this.elements = new Map();
@@ -150,46 +157,99 @@ class Snap {
       width: window.innerWidth,
       height: window.innerHeight
     };
-    this.isStopped = false;
-    this._predicted = null;               // ← new: store predicted scroll
+    this.isStopped      = false;
+    this._wheelLocked   = false;    // ← NEW
+    this._lastWheelTime = 0;        // ← NEW
 
     this.onWindowResize = () => {
       this.viewport.width = window.innerWidth;
       this.viewport.height = window.innerHeight;
     };
 
-    this.onScroll = ({ lastVelocity, velocity, userData }) => {
-      if (this.isStopped) return;
+    this.onScroll = ({
+      lastVelocity,
+      velocity,
+      userData
+    }) => {
+      if (this.isStopped)
+        return;
       const isDecelerating = Math.abs(lastVelocity) > Math.abs(velocity);
-      const isTurningBack =
-        Math.sign(lastVelocity) !== Math.sign(velocity) && velocity !== 0;
-
+      const isTurningBack = Math.sign(lastVelocity) !== Math.sign(velocity) && velocity !== 0;
       if (
         Math.abs(velocity) < this.options.velocityThreshold &&
         isDecelerating &&
         !isTurningBack &&
         userData?.initiator !== "snap"
       ) {
-        // ← predict 200ms ahead
-        this._predicted = this.lenis.scroll + velocity * 200;
         this.onSnapDebounced();
       }
     };
 
-    this.onSnap = () => {
-      // use predicted if present
-      let raw = this._predicted != null ? this._predicted : this.lenis.scroll;
-      let scroll = Math.ceil(raw);
-      this._predicted = null;              // ← clear prediction
-      const isHorizontal = this.lenis.isHorizontal;
+    // ← NEW wheel listener for predictive snapping
+    this.onWheel = e => {
+      if (this._wheelLocked) return;
+      if (Math.abs(e.deltaY) < 1) return;
 
+      const now = performance.now();
+      if (now - this._lastWheelTime < this.options.lockoutMs) return;
+
+      const current = this.lenis.scroll;
+      const predicted = current + e.deltaY * this.options.predictionMultiplier;
+
+      // gather all snap candidates
+      let candidates = [];
+      this.snaps.forEach(({ value, userData }) => {
+        candidates.push({ value, userData });
+      });
+      this.elements.forEach(elObj => {
+        const { rect, align } = elObj;
+        align.forEach(a => {
+          let v;
+          if (a === "start") {
+            v = rect.top;
+          } else if (a === "center") {
+            v = rect.top + rect.height / 2 - this.viewport.height / 2;
+          } else { // "end"
+            v = rect.top + rect.height - this.viewport.height;
+          }
+          candidates.push({ value: Math.ceil(v), elementObj: elObj });
+        });
+      });
+
+      const nearest = candidates.reduce((best, cand) =>
+        Math.abs(cand.value - predicted) < Math.abs(best.value - predicted) ? cand : best
+      , candidates[0]);
+
+      const zone = this.viewport.height * this.options.predictiveThreshold;
+      if (Math.abs(predicted - nearest.value) <= zone) {
+        e.preventDefault();
+        this._wheelLocked = true;
+        this._lastWheelTime = now;
+        this.lenis.scrollTo(nearest.value, {
+          lerp: this.options.lerp,
+          easing: this.options.easing,
+          duration: this.options.duration,
+          userData: { initiator: "snap" },
+          onStart:    () => onSnapStart?.(nearest),
+          onComplete: () => {
+            onSnapComplete?.(nearest);
+            setTimeout(() => this._wheelLocked = false, this.options.lockoutMs);
+          }
+        });
+      }
+    };
+
+    this.onSnap = () => {
+      let { scroll, isHorizontal } = this.lenis;
+      scroll = Math.ceil(this.lenis.scroll);
       let snaps = [];
-      // 1) primitive snaps
+
+      // 1) gather primitive snaps
       this.snaps.forEach(({ value, userData }) => {
         snaps.push({ value, userData });
       });
 
-      // 2) element-based snaps
+      // 2) gather element-based snaps
       this.elements.forEach(elementObj => {
         const { rect, align, options } = elementObj;
         align.forEach(align2 => {
@@ -206,38 +266,33 @@ class Snap {
               : rect.top + rect.height - this.viewport.height;
           }
           if (typeof value === "number") {
-            snaps.push({ value: Math.ceil(value), elementObj });
+            snaps.push({
+              value: Math.ceil(value),
+              elementObj   // carry the reference
+            });
           }
         });
       });
 
-      // sort by proximity
-      snaps = snaps.sort(
-        (a, b) => Math.abs(a.value - scroll) - Math.abs(b.value - scroll)
-      );
+      // sort by closeness
+      snaps = snaps.sort((a, b) => Math.abs(a.value - scroll) - Math.abs(b.value - scroll));
 
       // pick nearest
-      const prevSnap =
-        snaps.filter(s => s.value <= scroll).slice(-1)[0] || snaps[0];
+      const prevSnap = snaps.filter(s => s.value <= scroll).slice(-1)[0] || snaps[0];
       const nextSnap = snaps.filter(s => s.value >= scroll)[0] || snaps[snaps.length - 1];
-      const snap = (scroll - prevSnap.value) < (nextSnap.value - scroll)
-        ? prevSnap
-        : nextSnap;
+      const snap = (scroll - prevSnap.value) < (nextSnap.value - scroll) ? prevSnap : nextSnap;
       const distance = Math.abs(scroll - snap.value);
 
-      // threshold logic unchanged
+      // 3) threshold logic (unchanged)
       let threshold;
       if (snap.elementObj) {
         const custom = snap.elementObj.options.threshold;
-        threshold = typeof custom === "number"
-          ? custom
-          : snap.elementObj.rect.height;
+        threshold = typeof custom === "number" ? custom : snap.elementObj.rect.height;
       } else {
-        threshold = isHorizontal
-          ? this.viewport.width
-          : this.viewport.height;
+        threshold = isHorizontal ? this.viewport.width : this.viewport.height;
       }
 
+      // 4) do the snap if within threshold
       if (
         this.options.type === "mandatory" ||
         (this.options.type === "proximity" && distance <= threshold)
@@ -247,12 +302,8 @@ class Snap {
           easing: this.options.easing,
           duration: this.options.duration,
           userData: { initiator: "snap" },
-          onStart: () => {
-            this.options.onSnapStart?.(snap);
-          },
-          onComplete: () => {
-            this.options.onSnapComplete?.(snap);
-          }
+          onStart:    () => onSnapStart?.(snap),
+          onComplete: () => onSnapComplete?.(snap)
         });
       }
     };
@@ -265,17 +316,24 @@ class Snap {
       velocityThreshold,
       debounce: debounceDelay,
       onSnapStart,
-      onSnapComplete
+      onSnapComplete,
+
+      // ← copy in predictive options
+      predictionMultiplier,
+      predictiveThreshold,
+      lockoutMs
     };
     this.onWindowResize();
     window.addEventListener("resize", this.onWindowResize, false);
     this.onSnapDebounced = debounce(this.onSnap, this.options.debounce);
     this.lenis.on("scroll", this.onScroll);
+    window.addEventListener("wheel", this.onWheel, { passive: false });   // ← NEW
   }
 
   destroy() {
     this.lenis.off("scroll", this.onScroll);
     window.removeEventListener("resize", this.onWindowResize, false);
+    window.removeEventListener("wheel", this.onWheel);                     // ← NEW
     this.elements.forEach(el => el.destroy());
   }
   start() {
