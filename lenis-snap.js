@@ -80,7 +80,7 @@ class SnapElement {
     align = ["start"],
     ignoreSticky = true,
     ignoreTransform = false,
-    threshold = null
+    threshold = null      // optional custom threshold in px
   } = {}) {
     this.rect = {};
     this.element = element;
@@ -197,7 +197,7 @@ class Snap {
       this._currentScroll = scroll;
     });
 
-    // — predictive wheel listener (UPDATED factor line)
+    // — predictive wheel listener
     this.onWheel = e => {
       if (this._wheelLocked) return;
       if (Math.abs(e.deltaY) < 1) return;
@@ -206,7 +206,7 @@ class Snap {
       if (now - this._lastWheelTime < 32) return;
       this._lastWheelTime = now;
 
-      // ← HERE: use this.options.lerp
+      // UPDATED: use this.options.lerp for factor
       const factor    = this.options.predictionMultiplier * (1 - this.options.lerp);
       const predicted = this._currentScroll + e.deltaY * factor;
       const zonePx    = this.viewport.height * this.options.predictiveThreshold;
@@ -341,7 +341,7 @@ class Snap {
   }
 
   start() { this.isStopped = false; }
-  stop()  { this.isStopped = true; }
+  stop()  { this.isStopped = true;  }
 
   add(value, userData = {}) {
     const id = uid();
