@@ -163,10 +163,10 @@ class Snap {
     this.isStopped = false;
 
     // Resize listener
-    this.onWindowResize = () => {
-      this.viewport.width = window.innerWidth;
-      this.viewport.height = window.innerHeight;
-    };
+    this.onWindowResize = this.onWindowResize.bind(this);
+    this.onScroll = this.onScroll.bind(this);
+    this.snapToClosest = this.snapToClosest.bind(this);
+    this.onSnap = this.onSnap.bind(this);  // Ensure proper binding
 
     window.addEventListener("resize", this.onWindowResize, false);
 
