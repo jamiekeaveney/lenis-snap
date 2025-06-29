@@ -1,6 +1,6 @@
 function debounce(callback, delay) {
   let timer;
-  return function(...args) {
+  return function (...args) {
     let context = this;
     clearTimeout(timer);
     timer = setTimeout(() => {
@@ -191,20 +191,27 @@ class Snap {
     };
     this.isStopped = false;
 
-    // Bind methods BEFORE using them
-    this.onWindowResize = this.onWindowResize.bind(this);
-    this.onScroll = this.onScroll.bind(this);
-    this.snapToClosest = this.snapToClosest.bind(this);
-    this._onSnap = this._onSnap.bind(this); // note: renamed to avoid conflict
+    // Directly define the methods (no need for .bind() here)
+    this.onWindowResize = this.onWindowResize;
+    this.onScroll = this.onScroll;
+    this.snapToClosest = this.snapToClosest;
+    this._onSnap = this._onSnap;
 
     // Debounced version of snap callback
     this.onSnapDebounced = debounce(this._onSnap, this.options.debounce);
 
-    // Add event listeners
+    // Attach event listeners
     window.addEventListener("resize", this.onWindowResize, false);
     this.lenis.on("scroll", this.onScroll);
   }
 
+  // Handle resize
+  onWindowResize() {
+    this.viewport.width = window.innerWidth;
+    this.viewport.height = window.innerHeight;
+  }
+
+  // Handle scroll and snapping logic
   onScroll({ lastVelocity, velocity, userData }) {
     if (this.isStopped) return;
 
@@ -222,6 +229,7 @@ class Snap {
     }
   }
 
+  // Snapping to the closest target
   snapToClosest(targetY) {
     let closest = null;
     let closestDist = Infinity;
@@ -258,6 +266,7 @@ class Snap {
     }
   }
 
+  // Destroy method to clean up
   destroy() {
     this.lenis.off("scroll", this.onScroll);
     window.removeEventListener("resize", this.onWindowResize, false);
@@ -267,6 +276,7 @@ class Snap {
   start() {
     this.isStopped = false;
   }
+
   stop() {
     this.isStopped = true;
   }
@@ -291,4 +301,5 @@ class Snap {
     this.elements.delete(id);
   }
 }
+
 export { Snap };
