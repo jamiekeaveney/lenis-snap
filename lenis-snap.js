@@ -165,7 +165,7 @@ class Snap {
       lerp,
       easing,
       duration,
-      velocityThreshold = 1,
+      velocityThreshold = 1,  // Default value for velocityThreshold
       debounce: debounceDelay = 0,
       onSnapStart,
       onSnapComplete
@@ -191,11 +191,11 @@ class Snap {
     };
     this.isStopped = false;
 
-    // Directly define the methods (no need for .bind() here)
-    this.onWindowResize = this.onWindowResize;
-    this.onScroll = this.onScroll;
-    this.snapToClosest = this.snapToClosest;
-    this._onSnap = this._onSnap;
+    // Bind methods
+    this.onWindowResize = this.onWindowResize.bind(this);
+    this.onScroll = this.onScroll.bind(this);
+    this.snapToClosest = this.snapToClosest.bind(this);
+    this._onSnap = this._onSnap.bind(this);
 
     // Debounced version of snap callback
     this.onSnapDebounced = debounce(this._onSnap, this.options.debounce);
@@ -207,8 +207,10 @@ class Snap {
 
   // Handle resize
   onWindowResize() {
-    this.viewport.width = window.innerWidth;
-    this.viewport.height = window.innerHeight;
+    if (this.viewport) {
+      this.viewport.width = window.innerWidth;
+      this.viewport.height = window.innerHeight;
+    }
   }
 
   // Handle scroll and snapping logic
