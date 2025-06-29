@@ -146,53 +146,51 @@ function uid() {
 }
 
 class Snap {
-  constructor(lenis, {
-    type = "mandatory",
-    lerp,
-    easing,
-    duration,
-    velocityThreshold = 1,  // Ensure default value
-    debounce: debounceDelay = 0,
-    onSnapStart,
-    onSnapComplete
-  } = {}) {
+  constructor(lenis, options = {}) {
+    const {
+      type = "mandatory",
+      lerp,
+      easing,
+      duration,
+      velocityThreshold = 1,
+      debounce: debounceDelay = 0,
+      onSnapStart,
+      onSnapComplete
+    } = options;
+
+    this.options = {
+      type,
+      lerp,
+      easing,
+      duration,
+      velocityThreshold,
+      debounce: debounceDelay,
+      onSnapStart,
+      onSnapComplete
+    };
+
     this.lenis = lenis;
     this.elements = new Map();
     this.snaps = new Map();
-    this.viewport = { width: window.innerWidth, height: window.innerHeight };
+    this.viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    };
     this.isStopped = false;
 
-    // Resize listener
+    // Bind methods once
     this.onWindowResize = this.onWindowResize.bind(this);
     this.onScroll = this.onScroll.bind(this);
     this.snapToClosest = this.snapToClosest.bind(this);
-    this.onSnap = this.onSnap.bind(this);  // Ensure proper binding
+    this.onSnap = this.onSnap.bind(this);
+    this.onSnapDebounced = debounce(this.onSnap, this.options.debounce);
 
-    // Debugging: Check if this is undefined
-    console.log('Snap constructor: this:', this);
-
+    // Attach listeners
     window.addEventListener("resize", this.onWindowResize, false);
-
-    // Predict the end of scroll based on velocity and snap to the closest target
-    this.onScroll = ({ lastVelocity, velocity, userData }) => {
-      if (this.isStopped) return;
-
-      const isDecelerating = Math.abs(lastVelocity) > Math.abs(velocity);
-      const isTurningBack = Math.sign(lastVelocity) !== Math.sign(velocity) && velocity !== 0;
-
-      if (Math.abs(velocity) < this.options.velocityThreshold && isDecelerating && !isTurningBack && userData?.initiator !== "snap") {
-        const predictedY = predictScrollEnd(this.lenis.scroll, velocity);
-        this.snapToClosest(predictedY);
-      }
-    };
-
-    // Correctly bind methods to the instance
-    this.onSnapDebounced = debounce(this.onSnap.bind(this), this.options.debounce);
-
-    console.log('Snap constructor after binding: this:', this);
-
     this.lenis.on("scroll", this.onScroll);
   }
+
+
 
   snapToClosest(targetY) {
     let closest = null;
