@@ -271,4 +271,4 @@ class Snap {
   }
 }
 
-export { Snap };
+window.Snap = Snap;
