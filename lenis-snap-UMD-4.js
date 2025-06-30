@@ -325,3 +325,7 @@
   // Expose the Snap constructor
   return Snap;
 }));
+
+
+/* overwrite anything that was there before */
+if (typeof window !== 'undefined') window.Snap = Snap;
