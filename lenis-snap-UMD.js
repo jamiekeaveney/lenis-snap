@@ -162,10 +162,10 @@
     removeElement(id){this.elements.delete(id)}
   }
 
-  // ← HERE is your new global export:
+  // expose globally for <script src="…">
   window.Snap = E;
 
-  // keep these so CJS/AMD still work if needed:
+  // still define for CJS/AMD if anyone uses it that way:
   Object.defineProperty(p,"__esModule",{value:!0});
   p[Symbol.toStringTag] = "Module";
 });
